@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -164,21 +165,53 @@ class BlazeFace(nn.Module):
         """Converts the image pixels to the range [-1, 1]."""
         return x.float() / 127.5 - 1.0
 
-    def predict_on_image(self, img):
+    def predict_on_image(self, img: np.ndarray):
         """Makes a prediction on a single image.
 
         Arguments:
-            img: a NumPy array of shape (H, W, 3) or a PyTorch tensor of
-                 shape (3, H, W). The image's height and width should be 
-                 128 pixels.
+            img: a NumPy array of shape (H, W, 3). The image will be resized and letterbox padded.
 
         Returns:
             A tensor with face detections.
         """
-        if isinstance(img, np.ndarray):
-            img = torch.from_numpy(img).permute((2, 0, 1))
 
-        return self.predict_on_batch(img.unsqueeze(0))[0]
+        img_height, img_width, input_tensor = self.letterbox_padding(img)
+
+        input_tensor = torch.from_numpy(input_tensor).permute((2, 0, 1))
+
+        detections = self.predict_on_batch(input_tensor.unsqueeze(0))[0]
+        self.remove_letterbox_padding(img_height, img_width, detections)
+        return detections
+
+    def remove_letterbox_padding(self, img_height, img_width, detections):
+        if img_width > img_height:
+            relative_image_height = img_height / img_width
+            relative_half_letterbox_height = (1.0 - relative_image_height) / 2
+            detection_coordinates = detections[:, :-1].reshape(-1, 8, 2)
+            detection_coordinates[..., 0] -= relative_half_letterbox_height
+            detection_coordinates[..., 0] /= relative_image_height
+        else:
+            relative_image_width = img_width / img_height
+            relative_half_letterbox_width = (1.0 - relative_image_width) / 2
+            detection_coordinates = detections[:, :-1].reshape(-1, 8, 2)
+            detection_coordinates[..., 1] -= relative_half_letterbox_width
+            detection_coordinates[..., 1] /= relative_image_width
+
+    def letterbox_padding(self, img):
+        bigger = max(img.shape)
+        factor = 128.0 / bigger
+        img_height, img_width = img.shape[:2]
+        resized_img_height, resized_img_width = 128, 128
+        input_tensor = np.zeros((128, 128, 3), dtype=np.uint8)
+        if img_width > img_height:
+            resized_img_height = int(img_height * factor)
+            half_letterbox_height = int((128 - resized_img_height) / 2)
+            input_tensor[half_letterbox_height:half_letterbox_height + resized_img_height, :] = cv2.resize(img, (resized_img_width, resized_img_height))
+        else:
+            resized_img_width = int(img_width * factor)
+            half_letterbox_width = int((128 - resized_img_width) / 2)
+            input_tensor[:, half_letterbox_width:half_letterbox_width + resized_img_width] = cv2.resize(img, (resized_img_width, resized_img_height))
+        return img_height, img_width, input_tensor
 
     def predict_on_batch(self, x):
         """Makes a prediction on a batch of images.

@@ -8,8 +8,6 @@ from performance_profile import TimeMeasure
 net = BlazeFace()
 net.load_weights("blazeface.pth")
 net.load_anchors("anchors.npy")
-anchors = np.load("anchors.npy")
-anchors.astype(np.float32).tofile("anchors_blazeface_pytorch_5af71b66.bin")
 
 # Optionally change the thresholds:
 net.min_score_thresh = 0.75
